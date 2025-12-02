@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>NFC → GitHub CSV Logger</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 600px; padding: 1rem; line-height: 1.6; }
+  h1 { font-size: 1.2rem; }
+  .card { border: 1px solid #ccc; border-radius: 10px; padding: 1rem; margin-bottom: 1rem; }
+  button { padding: 0.6rem 1rem; border-radius: 999px; border: none; font-size: 1rem; cursor: pointer; }
+  #startScan { background: #16a34a; color: #fff; }
+  #saveConfig { background: #888; color: #fff; }
+  #log { background: #111; color: #eee; font-size: 0.9rem; padding: 0.6rem; border-radius: 8px; white-space: pre-wrap;
+         max-height: 300px; overflow-y: auto; }
+</style>
+</head>
+<body>
+
+<h1>NFC → GitHub CSV Logger</h1>
+
+<div class="card">
+  <h3>GitHub設定</h3>
+  <label>GitHub Token (repo権限)
+    <input id="token" type="password" style="width:100%;" />
+  </label>
+  <label>owner
+    <input id="owner" type="text" style="width:100%;" placeholder="例: shu123" />
+  </label>
+  <label>repo
+    <input id="repo" type="text" style="width:100%;" placeholder="例: nfc-logger" />
+  </label>
+  <label>workflow file name
+    <input id="workflow" type="text" style="width:100%;" placeholder="log.yaml" />
+  </label>
+
+  <button id="saveConfig">設定を保存</button>
+  <div id="cfgStatus"></div>
+</div>
+
+<div class="card">
+  <h3>NFC スキャン</h3>
+  <button id="startScan">スキャン開始</button>
+  <div id="scanStatus"></div>
+</div>
+
+<div class="card">
+  <h3>ローカルログ</h3>
+  <pre id="log"></pre>
+</div>
+
+<script>
+const keys = ["token", "owner", "repo", "workflow"];
+
+function saveConfig() {
+  keys.forEach(k => {
+    const v = document.getElementById(k).value.trim();
+    localStorage.setItem("nfc_config_" + k, v);
+  });
+  document.getElementById("cfgStatus").textContent = "設定を保存しました";
+}
+
+function loadConfig() {
+  keys.forEach(k => {
+    const v = localStorage.getItem("nfc_config_" + k);
+    if (v) document.getElementById(k).value = v;
+  });
+  document.getElementById("cfgStatus").textContent = "設定を読み込みました";
+}
+
+function logLocal(msg) {
+  const now = new Date().toISOString();
+  const area = document.getElementById("log");
+  area.textContent = `[${now}] ${msg}\n` + area.textContent;
+}
+
+async function triggerWorkflow(uid) {
+  const token = document.getElementById("token").value.trim();
+  const owner = document.getElementById("owner").value.trim();
+  const repo = document.getElementById("repo").value.trim();
+  const workflow = document.getElementById("workflow").value.trim();
+
+  const url = `https://api.github.com/repos/${owner}/${repo}/actions/workflows/${workflow}/dispatches`;
+
+  const body = { ref: "main", inputs: { uid: uid } };
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Accept": "application/vnd.github+json",
+      "Authorization": "Bearer " + token,
+    },
+    body: JSON.stringify(body)
+  });
+
+  if (!res.ok) {
+    logLocal(`❌ Actions起動失敗: ${res.status} ${await res.text()}`);
+  } else {
+    logLocal(`🚀 Actionsトリガー: uid=${uid}`);
+  }
+}
+
+async function startScan() {
+  if (!("NDEFReader" in window)) {
+    document.getElementById("scanStatus").textContent =
+      "Web NFC未対応 (Android + Chrome が必要)";
+    return;
+  }
+
+  try {
+    const ndef = new NDEFReader();
+    await ndef.scan();
+    document.getElementById("scanStatus").textContent =
+      "スキャン中... タグをかざしてください";
+
+    ndef.onreading = (event) => {
+      const uid = event.serialNumber || "(no uid)";
+      logLocal(`読み取り: ${uid}`);
+      triggerWorkflow(uid);
+    };
+  } catch (err) {
+    document.getElementById("scanStatus").textContent = "エラー: " + err;
+  }
+}
+
+document.getElementById("saveConfig").addEventListener("click", saveConfig);
+document.getElementById("startScan").addEventListener("click", startScan);
+loadConfig();
+</script>
+
+</body>
+</html>
