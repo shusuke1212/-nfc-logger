@@ -2,9 +2,14 @@ name: NFC Log
 
 on:
   workflow_dispatch:
+    inputs:
+      uid:
+        description: "NFC UID"
+        required: true
+        type: string
 
 permissions:
-  contents: write   # ←← これが必須！！
+  contents: write
 
 jobs:
   append_log:
@@ -12,14 +17,14 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Run Python script
+      - name: Append to CSV
         run: |
-          python3 log_script.py
+          echo "$(date -u +'%Y-%m-%dT%H:%M:%SZ'),${{ github.event.inputs.uid }}" >> nfc_log.csv
 
       - name: Commit changes
         run: |
           git config user.name "NFC Logger Bot"
           git config user.email "bot@example.com"
           git add nfc_log.csv
-          git commit -m "Add log"
+          git commit -m "Add log: ${{ github.event.inputs.uid }}"
           git push
